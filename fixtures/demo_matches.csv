@@ -1,0 +1,5 @@
+kickoff_utc,home_team,away_team,home_goals,away_goals,status,competition_id,attendance
+2024-02-03T15:00:00+00:00,Alpha Athletic,Beta Rovers,2,1,FT,demo-league,1200
+2024-02-10T15:00:00+00:00,Gamma Town,Delta United,0,0,FT,demo-league,980
+2024-02-17T15:00:00+00:00,Beta Rovers,Gamma Town,3,2,FT,demo-league,1410
+2024-02-24T15:00:00+00:00,Delta United,Alpha Athletic,1,1,FT,demo-league,1105

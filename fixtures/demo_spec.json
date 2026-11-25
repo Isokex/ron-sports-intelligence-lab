@@ -1,0 +1,25 @@
+{
+  "meta": {
+    "name": "demo-synthetic",
+    "licence": "CC0-1.0",
+    "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "attribution": "Hand-written demonstration rows created for this repository. No real club, player or price.",
+    "sourceUrl": "https://github.com/Isokex/ron-sports-intelligence-lab",
+    "retrievedAt": "2026-11-25T00:00:00+00:00",
+    "synthetic": true,
+    "permitted": {"research": true, "production_training": true, "redistribution": true}
+  },
+  "constants": {"season": "2024", "source_name": "demo-synthetic"},
+  "columns": {
+    "match_id": "kickoff_utc",
+    "kickoff_utc": "kickoff_utc",
+    "available_at": "kickoff_utc",
+    "home_team_name": "home_team",
+    "away_team_name": "away_team",
+    "home_goals": "home_goals",
+    "away_goals": "away_goals",
+    "status": "status",
+    "competition_id": "competition_id",
+    "competition_name": "competition_id"
+  }
+}
