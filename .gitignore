@@ -224,3 +224,6 @@ __marimo__/
 
 # Lab data (regenerated, never committed)
 data/
+
+# Research artifact registry: metadata only, weights stay local
+artifacts/
