@@ -1,52 +1,47 @@
 """Generic CSV adapter driven by a mapping spec.
 
-Any source with a stable tabular export can be added without touching corpus
-code: write a JSON spec that maps its columns onto the canonical fields and
-declare the licence. Nothing about a provider is hard-coded here.
+A spec may DECLARE permissions; it can never VERIFY them. Whatever a spec says
+about production rights, this adapter emits an unverified source, because a
+file we downloaded cannot grant us rights we do not hold.
 """
 import csv
 import json
 
-from .base import ProviderError, ProviderResult, SourceMeta
+from .base import ProviderResult, SourceMeta, Verification
 
 
 class CsvMappedProvider:
-    def __init__(self, csv_path: str, spec_path: str):
+    is_synthetic = False
+
+    def __init__(self, csv_path, spec_path):
         self.csv_path = csv_path
         with open(spec_path) as fh:
             self.spec = json.load(fh)
-        meta = self.spec.get("meta") or {}
-        self.columns = self.spec.get("columns") or {}
-        self.constants = self.spec.get("constants") or {}
+        raw = dict(self.spec.get("meta") or {})
+        raw.pop("verification", None)   # a spec cannot verify itself
         self.meta = SourceMeta(
-            name=meta.get("name", "csv"),
-            licence=meta.get("licence", "UNKNOWN"),
-            licence_url=meta.get("licenceUrl", ""),
-            attribution=meta.get("attribution", ""),
-            source_url=meta.get("sourceUrl", ""),
-            retrieved_at=meta.get("retrievedAt", ""),
-            permitted=meta.get("permitted", {}),
+            name=str(raw.get("name") or "csv"),
+            licence=str(raw.get("licence") or ""),
+            licence_url=str(raw.get("licenceUrl") or ""),
+            attribution=str(raw.get("attribution") or ""),
+            source_url=str(raw.get("sourceUrl") or ""),
+            retrieved_at=str(raw.get("retrievedAt") or ""),
+            permitted=dict(raw.get("permitted") or {}),
+            verification=Verification(status="UNVERIFIED"),
         )
-        self.is_synthetic = bool(meta.get("synthetic", False))
-        self.ingested_at = meta.get("retrievedAt", "")
+        self.is_synthetic = bool(raw.get("synthetic"))
+        self.columns = dict(self.spec.get("columns") or {})
+        self.constants = dict(self.spec.get("constants") or {})
 
-    def fetch(self) -> ProviderResult:
-        try:
-            with open(self.csv_path, newline="") as fh:
-                rows = list(csv.DictReader(fh))
-        except OSError as exc:
-            raise ProviderError(f"csv read failed: {type(exc).__name__}") from exc
+    def fetch(self):
+        notes = ["permissions declared by the spec; NOT verified"]
         records = []
-        for row in rows:
-            mapped = {}
-            for field, column in self.columns.items():
-                value = row.get(column)
-                mapped[field] = value if value not in ("", None) else None
-            for field, value in self.constants.items():
-                mapped.setdefault(field, value)
-            mapped["source_name"] = self.meta.name
-            mapped["ingested_at"] = self.ingested_at
-            mapped["is_synthetic"] = self.is_synthetic
-            records.append(mapped)
-        complete = bool(self.spec.get("complete", True))
-        return ProviderResult(records=records, complete=complete, meta=self.meta)
+        with open(self.csv_path, newline="") as fh:
+            for row in csv.DictReader(fh):
+                mapped = {field: row.get(column)
+                          for field, column in self.columns.items()}
+                mapped.update(self.constants)
+                mapped.setdefault("source_name", self.meta.name)
+                records.append(mapped)
+        return ProviderResult(records=records, complete=True, meta=self.meta,
+                              notes=notes)

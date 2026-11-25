@@ -55,8 +55,8 @@ def test_malformed_row_is_rejected_with_a_reason():
 
 
 @pytest.mark.parametrize("override,code", [
-    ({"kickoff_utc": "not-a-date"}, "invalid_kickoff"),
-    ({"available_at": "2023-08-12T14:00:00+00:00"}, "available_before_kickoff"),
+    ({"kickoff_utc": "not-a-date"}, "invalid_timestamp:kickoff_utc"),
+    ({"home_goals": "2.5"}, "not_an_integer:home_goals"),
     ({"away_team_name": "Alpha"}, "self_match"),
     ({"home_goals": -1}, "impossible_score"),
     ({"home_goals": 99}, "impossible_score"),
@@ -99,7 +99,7 @@ def test_manifest_records_source_licence_and_permitted_use(tmp_path):
     manifest = corpus.build(SyntheticProvider(), str(tmp_path), created_at=AFTER)
     source = manifest["source"]
     assert source["licence"] == "CC0-1.0"
-    assert set(source["permitted"]) == {"research", "production_training",
+    assert set(source["permissions"]["declared"]) == {"research", "production_training",
                                         "redistribution"}
     assert manifest["suitableForProductionTraining"] is False
     assert manifest["schemaVersion"].startswith("rsil-match")

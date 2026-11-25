@@ -62,9 +62,12 @@ def _check(rec):
     if available is None:
         out.append(Finding("invalid_available_at", ERROR, mid,
                            rec.available_at or ""))
+    # NO universal ordering between event time and availability: pre-match
+    # odds and lineups precede kickoff, results follow it. A match-level
+    # outcome timestamp that precedes kickoff is suspicious, not impossible.
     if kickoff and available and available < kickoff:
-        out.append(Finding("available_before_kickoff", ERROR, mid,
-                           "information cannot be known before the event"))
+        out.append(Finding("result_available_before_kickoff", WARNING, mid,
+                           "outcome timestamp precedes kickoff; check the source"))
     if rec.home_team_name and rec.home_team_name == rec.away_team_name:
         out.append(Finding("self_match", ERROR, mid, rec.home_team_name))
     for label, value in (("home_goals", rec.home_goals),
@@ -109,22 +112,38 @@ def validate(records, source_name="unknown", ingested_at="", is_synthetic=False)
         if blocking:
             report.rejected.append((raw, blocking[0].code))
             continue
-        prior = seen.get(rec.match_id)
+        prior = seen.get(rec.match_key)
         if prior is not None:
             if _result_of(prior) == _result_of(rec):
                 report.duplicates += 1
             else:
-                report.conflicts.append({"match_id": rec.match_id,
+                report.conflicts.append({"match_key": rec.match_key,
+                                         "match_id": rec.match_id,
                                          "kept": list(_result_of(prior)),
                                          "seen": list(_result_of(rec))})
                 report.findings.append(Finding(
                     "conflicting_result", ERROR, rec.match_id,
                     "first observation kept, later one recorded"))
             continue
-        seen[rec.match_id] = rec
+        seen[rec.match_key] = rec
         report.accepted.append(rec)
     return report
 
 
+def validate_observations(records):
+    """Validate observations with the same fail-closed discipline."""
+    from .temporal import validate_observation
+    accepted, rejected, reasons = [], [], {}
+    for raw in records or []:
+        obs, reason = validate_observation(raw)
+        if obs is None:
+            rejected.append((raw, reason))
+            reasons[reason] = reasons.get(reason, 0) + 1
+        else:
+            accepted.append(obs)
+    return {"accepted": accepted, "rejected": rejected, "reasons": reasons,
+            "counts": {"accepted": len(accepted), "rejected": len(rejected)}}
+
+
 __all__ = ["ERROR", "WARNING", "Finding", "QualityReport", "parse_iso",
-           "validate", "REQUIRED"]
+           "validate", "validate_observations", "REQUIRED"]
