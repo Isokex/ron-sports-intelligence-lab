@@ -10,7 +10,7 @@
 
 ## 1. Executive summary
 
-**No provider assessed grants us permission to train models in writing.** That is the single most important finding, and it survives every technical comparison in this document: several providers would give us excellent data, and none of them has said we may train on it.
+**No commercial API provider reviewed here has supplied an affirmative, bespoke agreement permitting model training.** That is the single most important finding, and it survives every technical comparison in this document: several providers would give us excellent data, and none of them has said in writing that we may train on it. OpenFootball is different in kind rather than an exception: its CC0 dedication is a public-domain basis for the intended data use, not a vendor's grant. Section 5 keeps those two bases distinct, and section 10 separates legal permission from internal production approval.
 
 The evidence splits into three groups.
 
@@ -20,9 +20,9 @@ The evidence splits into three groups.
 
 **Conditional.** Sportmonks' general terms forbid storage and restrict use to personal, non-commercial purposes, while its Enterprise page advertises commercial use, storage and historical seasons. The reconciliation is a contract, not a page: training rights must appear in a written Enterprise agreement. Sportradar and StatsBomb commercial are enterprise contracts with no published terms, and Sportradar requires certified destruction of historical data on exit, which puts trained-model retention in question.
 
-**One provider is genuinely usable.** OpenFootball is dedicated to the public domain under CC0. Fixtures and results can be stored, trained on, published and kept forever with no permission needed. It carries no odds, no event data, no lineups and no xG.
+**One provider is legally clear.** OpenFootball is dedicated to the public domain under CC0, so fixtures and results may be stored, trained on, used commercially and kept indefinitely without anyone's permission, and that waiver is irrevocable. It carries no odds, no event data, no lineups and no xG. Note what this does not do: CC0 settles the licence question and nothing else. Internal production approval, evidence records and publication authorisation are ours to grant and have not been granted (section 10).
 
-**Recommendation: GO for a research corpus built on OpenFootball, and NO-GO for training on every other provider until written answers arrive.** OpenFootball supports Elo, Dixon-Coles, independent Poisson and basic form features, which is enough to prove the training pipeline end to end on a clean legal footing. It cannot support goals-quality, lineup, injury or market models. Phase 2B should build the OpenFootball corpus, not wait for vendor replies, and the licensing questions in section 8 should be sent in parallel.
+**Recommendation: GO for a research corpus built on OpenFootball, and NO-GO for training on every other provider until written answers arrive.** The corpus is research-only and carries `productionEligible: false`: CC0 permits more, but our evidence and approval gates do not yet support more. OpenFootball supports Elo, Dixon-Coles, independent Poisson and basic form features, which is enough to prove the training pipeline end to end on a clean legal footing. It cannot support goals-quality, lineup, injury or market models. Phase 2B should build the OpenFootball corpus, not wait for vendor replies, and the licensing questions in section 8 should be sent in parallel.
 
 ---
 
@@ -48,7 +48,7 @@ Access notes worth recording, because they are themselves evidence about automat
 
 ## 3. Provider comparison matrix
 
-Scores are 0–5. Licensing certainty is weighted as a gate, not a summand: a provider that fails licensing cannot be rescued by a high technical score. "Rights verdict" is the worst-case status across the nine rights in section 5 for our intended use (research corpus, then production training).
+Scores are 0–5. Licensing certainty is weighted as a gate, not a summand: a provider that fails licensing cannot be rescued by a high technical score. "Rights verdict" is the worst-case status across the nine rights in section 5 for our intended use (research corpus, then production training). It records **legal permission under the source licence only**. It is not internal production approval: even a PERMITTED row needs a verified evidence record, a named human approver and a separate publication authorisation (section 10).
 
 | Provider | Licensing certainty | Historical depth | Competition coverage | Statistical richness | Odds coverage | Timestamp quality | Completeness / reliability | Cost & value | Integration effort | Rights verdict |
 |---|---|---|---|---|---|---|---|---|---|---|
@@ -81,7 +81,7 @@ Reading the matrix: the two highest technical scores (Sportradar, StatsBomb comm
 
 **Verdict.** PROHIBITED for AI training and for automated acquisition. Do not build an adapter. Keep the existing block in `docs/licensing-matrix.md`. Written permission, if ever obtained, would still not resolve the bookmaker-rights question.
 
-### 4.2 OpenFootball — PERMITTED (CC0), the only production-eligible source found
+### 4.2 OpenFootball — PERMITTED (CC0) for the intended data use, not automatically production-approved
 
 **Sources.** `https://github.com/openfootball` and per-competition repositories, read 25 Nov 2026. Project materials dedicate the data to the public domain under CC0 1.0.
 
@@ -91,7 +91,18 @@ Reading the matrix: the two highest technical scores (Sportradar, StatsBomb comm
 
 **The honest caveat.** CC0 covers the *compilation*. It does not grant rights in competition names, club crests, fixture lists as organised by a league, or any third-party marks, and it does not warrant that a volunteer did not transcribe a source they had no right to copy. For a research corpus of scores and dates that is acceptable; for a public commercial product carrying league branding it is not, and the branding question is ours to avoid rather than the data's to answer.
 
-**Coverage limits.** Fixtures and results only. No timestamps for when a result became known (we would derive `available_at` from the match date, which is a conservative assumption and must be recorded as such in the manifest), no odds, no player-level data.
+**Coverage limits.** Fixtures and results only. No odds, no event data, no player-level data, and no timestamp for when a result became known. The temporal rule that governs that last gap is specified below.
+
+### 4.2.1 Temporal availability rule for OpenFootball (implementation requirement for Phase 2B)
+
+OpenFootball records a match date, not a publication time, so a result cannot be treated as available at kickoff, at the start of the day, or at any moment before the match could have finished. Deriving `available_at` from the match date alone is not conservative enough. The rule for Phase 2B:
+
+1. **Never timestamp a result before full time.** Derived availability is `kickoff_utc + 120 minutes` at the earliest, with kickoff taken as midday UTC when the source supplies a date only, so the bound is conservative in both directions. If a source later supplies a real kickoff time, the bound uses it.
+2. **Do not use same-day results as pre-match features.** Any historical result whose derived availability falls after the prediction timestamp is excluded and counted, even when its fixture date equals the target date.
+3. **Record the derivation, not only the value.** Each row carries `source_timestamp` (what the file said, date only), `derived_available_at`, `derivation_rule` (a versioned id such as `openfootball-date-only-v1`) and `uncertainty` (the window between earliest and latest plausible publication). A dataset missing those four fields is not eligible for training.
+4. **Prove the boundary with leakage tests before training.** Required cases: a same-day result is excluded at a pre-match `as_of`; a derived availability is never earlier than full time; advancing `as_of` admits a result exactly once; and two builds from identical inputs produce identical exclusions.
+
+This is a recorded requirement for Phase 2B. No Phase 1 code, schema or ingestion path changes in this correction.
 
 ### 4.3 StatsBomb — research sandbox (CONDITIONAL), commercial contract only
 
@@ -225,7 +236,7 @@ Two readings matter. First, no column is green except OpenFootball's, and even t
 | Corrections history | Git history of the repo | None published | None published | None published | None published | None published | None published |
 | Export format | Text / JSON in git | CSV | JSON | JSON | JSON | JSON | JSON |
 
-**On timestamps, which decide whether a model can be trusted.** Our temporal contract needs `available_at` per piece of information. Only the event-level providers (StatsBomb, API-Football, Sportmonks) expose per-snapshot odds times or event times. Football-Data.co.uk gives a *collection day*, not a time, and OpenFootball gives no availability information at all, so any corpus built from it must derive `available_at` conservatively and say so in the manifest. That is acceptable for research and must not be dressed up as production-grade timestamping.
+**On timestamps, which decide whether a model can be trusted.** Our temporal contract needs `available_at` per piece of information. Only the event-level providers (StatsBomb, API-Football, Sportmonks) expose per-snapshot odds times or event times. Football-Data.co.uk gives a *collection day*, not a time, and OpenFootball gives no availability information at all, so any corpus built from it must derive `available_at` under the explicit rule in section 4.2.1 and record the derivation, not just the result. That is acceptable for research and must not be dressed up as production-grade timestamping.
 ---
 
 ## 7. Pricing and cost scenarios (nothing purchased)
@@ -297,12 +308,21 @@ No vendor has been contacted. These questions are for the CEO to authorise, and 
 
 **Tier R — research corpus.** Sources whose rights permit research and, where possible, training: OpenFootball now; StatsBomb Open Data only inside an isolated sandbox that never feeds a production corpus. Lives in a gitignored data directory, manifests carry `productionEligible: false`, and nothing derived from it is published.
 
-**Tier P — production-eligible corpus.** Only sources with `PERMITTED` on every right we need, or a written agreement on file. Today that set is exactly {OpenFootball}. Each dataset manifest must record: licence name and URL, licence version date, the evidence reference (a stored document, not a link), the reviewer, the scope approved, and the approval date. The Phase 1 machinery already refuses to grant this from a CSV spec; the rule now extends to any provider.
+**Tier P — production-eligible corpus.** Reaching this tier needs four separate gates passed, in order, and passing one does not imply the next:
+
+| Gate | Question | Who decides | Current state for OpenFootball |
+|---|---|---|---|
+| 1. Legal permission | Does the licence allow this use? | Source licence | **Passed.** CC0, irrevocable, covers storage, training, commercial use and redistribution |
+| 2. Dataset eligibility | Does the manifest carry verified provenance, the derivation rule and complete scan evidence? | Our evidence rules | **Not yet.** No OpenFootball dataset exists; the 4.2.1 fields are unimplemented |
+| 3. Internal production approval | Has a named human approved this dataset for production use? | CEO, on the evidence record | **Not sought** |
+| 4. Publication and deployment | May the artifact be published, shipped or served to Ron? | Separate authorisation, per artifact | **Not sought** |
+
+So CC0 makes OpenFootball *legally* usable for commercial work, and that is the whole of what it establishes. It does not make any dataset or trained model internally approved, and it authorises nothing about publication. Each dataset manifest must still record the licence name and URL, licence version date, the evidence reference (a stored document, not a link), the reviewer, the approved scope and the approval date. The Phase 1 machinery already refuses to grant production status from a CSV spec; the rule extends to every provider, and a public-domain source is no exception.
 
 **Rules that follow from the matrix.**
 
 1. One provider, one adapter, one manifest. No mixing of sources inside a single dataset version without recording which rows came from where.
-2. `productionEligible` requires verified permissions with an evidence reference, complete scan, and a named human approver. It never authorises publication or deployment on its own.
+2. `productionEligible` requires gates 1 to 3 above: a verified licence with an evidence reference, complete scan evidence, the 4.2.1 derivation fields, and a named human approver. It never authorises publication or deployment on its own, and a permissive licence alone never sets it.
 3. Derived artifacts inherit the strictest licence of their inputs. A model trained on Tier R data is a Tier R artifact, full stop.
 4. No provider is added because it is cheap. Cost is the last column, not the first.
 5. Every provider gets a written-answer file before its adapter is written, so the code cannot outrun the rights.
@@ -311,7 +331,9 @@ No vendor has been contacted. These questions are for the CEO to authorise, and 
 
 ## 11. Go / no-go recommendation
 
-**GO — Phase 2B, OpenFootball research corpus.** Build an OpenFootball adapter on the existing provider-neutral architecture, ingest fixtures and results, derive `available_at` conservatively from match date and record that assumption in the manifest, and train the three baselines the lab was designed for.
+**GO — Phase 2B, OpenFootball research corpus.** Build an OpenFootball adapter on the existing provider-neutral architecture, ingest fixtures and results, derive `available_at` under the section 4.2.1 rule with all four derivation fields recorded, and train the three baselines the lab was designed for.
+
+**Why research-only, when the licence permits more.** The corpus ships `productionEligible: false` by choice, not because CC0 is insufficient. Gates 2 to 4 in section 10 have not been passed: there is no evidence record, no derivation implementation and no human approval, and a research corpus is the correct way to earn them. The licence clears the legal question; the manifest, the reviewer and the CEO clear the rest.
 
 **What OpenFootball can support:**
 
