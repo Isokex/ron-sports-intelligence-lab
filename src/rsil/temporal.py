@@ -175,7 +175,9 @@ def prematch_feature_inputs(match, history, observations, as_of) -> dict:
     return {"match_key": key, "kickoff_utc": match.get("kickoff_utc"),
             "asOf": cutoff, "observations": usable_obs,
             "history": usable_history,
-            # Informational only: the target outcome is never a feature.
+            # Timestamp-only and always False pre-match: `as_of` may not pass
+            # kickoff, so an outcome can never be "visible" here. It is NOT
+            # proof that a valid label exists; use training_labels for that.
             "label_visible": (lambda st: st is not None and st <= limit)(
                 _at(match)),
             "excluded": {"observations": dropped_obs,
@@ -230,6 +232,7 @@ def training_example(match, history, observations, as_of,
     features["label"] = ({"home_goals": labels[0].get("home_goals"),
                           "away_goals": labels[0].get("away_goals")}
                          if labels else None)
+    # True only when an eligible label was attached by training_labels.
     features["label_visible"] = bool(labels)
     return features
 

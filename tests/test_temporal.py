@@ -299,3 +299,56 @@ def test_dataset_builder_shares_the_same_invariant():
     with pytest.raises(temporal.TemporalError):
         temporal.training_example(record(), [], [], AFTER)
     assert temporal.feature_inputs is temporal.prematch_feature_inputs
+
+
+# --- label eligibility regressions ---
+
+def test_valid_finished_result_is_an_eligible_label():
+    assert temporal.label_eligible(record(), temporal.parse_iso(AFTER)) is True
+
+
+def test_unfinished_fixture_is_never_a_label_even_when_early():
+    assert temporal.label_eligible(record(status="NS"),
+                                   temporal.parse_iso(LATER)) is False
+
+
+def test_missing_home_score_is_not_a_label():
+    assert temporal.label_eligible(record(home_goals=None),
+                                   temporal.parse_iso(AFTER)) is False
+
+
+def test_missing_away_score_is_not_a_label():
+    assert temporal.label_eligible(record(away_goals=None),
+                                   temporal.parse_iso(AFTER)) is False
+
+
+def test_out_of_range_scores_are_not_labels():
+    for bad in (-1, 31):
+        assert temporal.label_eligible(record(home_goals=bad),
+                                       temporal.parse_iso(AFTER)) is False
+
+
+def test_boolean_and_string_scores_are_not_labels():
+    # Rows may reach the lab without passing schema coercion (Firestore, a
+    # provider's own export), so the label guard must be independent of it.
+    row = record()
+    assert temporal.label_eligible(dict(row, home_goals=True),
+                                   temporal.parse_iso(AFTER)) is False
+    assert temporal.label_eligible(dict(row, away_goals="2"),
+                                   temporal.parse_iso(AFTER)) is False
+
+
+def test_outcome_unavailable_at_label_as_of_is_not_a_label():
+    assert temporal.training_labels([record()], KICKOFF) == []
+
+
+def test_outcome_becomes_a_label_once_label_as_of_reaches_availability():
+    assert len(temporal.training_labels([record()], AFTER)) == 1
+
+
+def test_labels_have_no_kickoff_ceiling_while_features_do():
+    doc = record()
+    assert len(temporal.training_labels([doc], LATER)) == 1
+    assert temporal.prematch_feature_inputs(doc, [], [], KICKOFF)["label_visible"] is False
+    with pytest.raises(temporal.TemporalError):
+        temporal.prematch_feature_inputs(doc, [], [], LATER)
