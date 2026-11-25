@@ -1,0 +1,383 @@
+{
+  "created_at": "2026-11-25",
+  "normalization_rule": "proposal only: strip club-type tokens FC/AFC/CF/SC/AC, replace & with and, casefold, collapse whitespace. Runtime resolution is exact alias lookup; no fuzzy matching.",
+  "review_note": "Generated from the 39 observed OpenFootball EPL names across six seasons. Each alias is listed explicitly for human review; no club is merged by similarity at runtime.",
+  "teams": [
+    {
+      "aliases": [
+        "Arsenal FC"
+      ],
+      "display_name": "Arsenal",
+      "seasons": [
+        "2019-20",
+        "2020-21",
+        "2021-22",
+        "2022-23",
+        "2023-24",
+        "2024-25"
+      ],
+      "team_id": "arsenal"
+    },
+    {
+      "aliases": [
+        "Aston Villa",
+        "Aston Villa FC"
+      ],
+      "display_name": "Aston Villa",
+      "seasons": [
+        "2019-20",
+        "2020-21",
+        "2021-22",
+        "2022-23",
+        "2023-24",
+        "2024-25"
+      ],
+      "team_id": "aston-villa"
+    },
+    {
+      "aliases": [
+        "AFC Bournemouth"
+      ],
+      "display_name": "Bournemouth",
+      "seasons": [
+        "2019-20",
+        "2022-23",
+        "2023-24",
+        "2024-25"
+      ],
+      "team_id": "bournemouth"
+    },
+    {
+      "aliases": [
+        "Brentford FC"
+      ],
+      "display_name": "Brentford",
+      "seasons": [
+        "2021-22",
+        "2022-23",
+        "2023-24",
+        "2024-25"
+      ],
+      "team_id": "brentford"
+    },
+    {
+      "aliases": [
+        "Brighton & Hove Albion",
+        "Brighton & Hove Albion FC"
+      ],
+      "display_name": "Brighton And Hove Albion",
+      "seasons": [
+        "2019-20",
+        "2020-21",
+        "2021-22",
+        "2022-23",
+        "2023-24",
+        "2024-25"
+      ],
+      "team_id": "brighton-and-hove-albion"
+    },
+    {
+      "aliases": [
+        "Burnley FC"
+      ],
+      "display_name": "Burnley",
+      "seasons": [
+        "2019-20",
+        "2020-21",
+        "2021-22",
+        "2023-24"
+      ],
+      "team_id": "burnley"
+    },
+    {
+      "aliases": [
+        "Chelsea FC"
+      ],
+      "display_name": "Chelsea",
+      "seasons": [
+        "2019-20",
+        "2020-21",
+        "2021-22",
+        "2022-23",
+        "2023-24",
+        "2024-25"
+      ],
+      "team_id": "chelsea"
+    },
+    {
+      "aliases": [
+        "Crystal Palace",
+        "Crystal Palace FC"
+      ],
+      "display_name": "Crystal Palace",
+      "seasons": [
+        "2019-20",
+        "2020-21",
+        "2021-22",
+        "2022-23",
+        "2023-24",
+        "2024-25"
+      ],
+      "team_id": "crystal-palace"
+    },
+    {
+      "aliases": [
+        "Everton FC"
+      ],
+      "display_name": "Everton",
+      "seasons": [
+        "2019-20",
+        "2020-21",
+        "2021-22",
+        "2022-23",
+        "2023-24",
+        "2024-25"
+      ],
+      "team_id": "everton"
+    },
+    {
+      "aliases": [
+        "Fulham FC"
+      ],
+      "display_name": "Fulham",
+      "seasons": [
+        "2020-21",
+        "2022-23",
+        "2023-24",
+        "2024-25"
+      ],
+      "team_id": "fulham"
+    },
+    {
+      "aliases": [
+        "Ipswich Town FC"
+      ],
+      "display_name": "Ipswich Town",
+      "seasons": [
+        "2024-25"
+      ],
+      "team_id": "ipswich-town"
+    },
+    {
+      "aliases": [
+        "Leeds United FC"
+      ],
+      "display_name": "Leeds United",
+      "seasons": [
+        "2020-21",
+        "2021-22",
+        "2022-23"
+      ],
+      "team_id": "leeds-united"
+    },
+    {
+      "aliases": [
+        "Leicester City",
+        "Leicester City FC"
+      ],
+      "display_name": "Leicester City",
+      "seasons": [
+        "2019-20",
+        "2020-21",
+        "2021-22",
+        "2022-23",
+        "2024-25"
+      ],
+      "team_id": "leicester-city"
+    },
+    {
+      "aliases": [
+        "Liverpool FC"
+      ],
+      "display_name": "Liverpool",
+      "seasons": [
+        "2019-20",
+        "2020-21",
+        "2021-22",
+        "2022-23",
+        "2023-24",
+        "2024-25"
+      ],
+      "team_id": "liverpool"
+    },
+    {
+      "aliases": [
+        "Luton Town FC"
+      ],
+      "display_name": "Luton Town",
+      "seasons": [
+        "2023-24"
+      ],
+      "team_id": "luton-town"
+    },
+    {
+      "aliases": [
+        "Manchester City",
+        "Manchester City FC"
+      ],
+      "display_name": "Manchester City",
+      "seasons": [
+        "2019-20",
+        "2020-21",
+        "2021-22",
+        "2022-23",
+        "2023-24",
+        "2024-25"
+      ],
+      "team_id": "manchester-city"
+    },
+    {
+      "aliases": [
+        "Manchester United",
+        "Manchester United FC"
+      ],
+      "display_name": "Manchester United",
+      "seasons": [
+        "2019-20",
+        "2020-21",
+        "2021-22",
+        "2022-23",
+        "2023-24",
+        "2024-25"
+      ],
+      "team_id": "manchester-united"
+    },
+    {
+      "aliases": [
+        "Newcastle United",
+        "Newcastle United FC"
+      ],
+      "display_name": "Newcastle United",
+      "seasons": [
+        "2019-20",
+        "2020-21",
+        "2021-22",
+        "2022-23",
+        "2023-24",
+        "2024-25"
+      ],
+      "team_id": "newcastle-united"
+    },
+    {
+      "aliases": [
+        "Norwich City",
+        "Norwich City FC"
+      ],
+      "display_name": "Norwich City",
+      "seasons": [
+        "2019-20",
+        "2021-22"
+      ],
+      "team_id": "norwich-city"
+    },
+    {
+      "aliases": [
+        "Nottingham Forest FC"
+      ],
+      "display_name": "Nottingham Forest",
+      "seasons": [
+        "2022-23",
+        "2023-24",
+        "2024-25"
+      ],
+      "team_id": "nottingham-forest"
+    },
+    {
+      "aliases": [
+        "Sheffield United",
+        "Sheffield United FC"
+      ],
+      "display_name": "Sheffield United",
+      "seasons": [
+        "2019-20",
+        "2020-21",
+        "2023-24"
+      ],
+      "team_id": "sheffield-united"
+    },
+    {
+      "aliases": [
+        "Southampton FC"
+      ],
+      "display_name": "Southampton",
+      "seasons": [
+        "2019-20",
+        "2020-21",
+        "2021-22",
+        "2022-23",
+        "2024-25"
+      ],
+      "team_id": "southampton"
+    },
+    {
+      "aliases": [
+        "Tottenham Hotspur",
+        "Tottenham Hotspur FC"
+      ],
+      "display_name": "Tottenham Hotspur",
+      "seasons": [
+        "2019-20",
+        "2020-21",
+        "2021-22",
+        "2022-23",
+        "2023-24",
+        "2024-25"
+      ],
+      "team_id": "tottenham-hotspur"
+    },
+    {
+      "aliases": [
+        "Watford FC"
+      ],
+      "display_name": "Watford",
+      "seasons": [
+        "2019-20",
+        "2021-22"
+      ],
+      "team_id": "watford"
+    },
+    {
+      "aliases": [
+        "West Bromwich Albion FC"
+      ],
+      "display_name": "West Bromwich Albion",
+      "seasons": [
+        "2020-21"
+      ],
+      "team_id": "west-bromwich-albion"
+    },
+    {
+      "aliases": [
+        "West Ham United",
+        "West Ham United FC"
+      ],
+      "display_name": "West Ham United",
+      "seasons": [
+        "2019-20",
+        "2020-21",
+        "2021-22",
+        "2022-23",
+        "2023-24",
+        "2024-25"
+      ],
+      "team_id": "west-ham-united"
+    },
+    {
+      "aliases": [
+        "Wolverhampton Wanderers",
+        "Wolverhampton Wanderers FC"
+      ],
+      "display_name": "Wolverhampton Wanderers",
+      "seasons": [
+        "2019-20",
+        "2020-21",
+        "2021-22",
+        "2022-23",
+        "2023-24",
+        "2024-25"
+      ],
+      "team_id": "wolverhampton-wanderers"
+    }
+  ],
+  "version": "team-aliases-v1"
+}
