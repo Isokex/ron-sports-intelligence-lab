@@ -18,11 +18,20 @@ Rules this module enforces rather than documents:
 * Referenced artifact files must live under the gitignored ``data/`` directory,
   and their *resolved* paths must stay beneath the resolved data root, so a
   symlink cannot point at tracked source or outside the repository.
+* Registration always verifies every referenced file. There is no flag to skip
+  it: a record with file references and no base directory is refused, because a
+  caller must not be able to opt out of the only check that ties a record to
+  real bytes.
 * The artifact id is recomputed from family, dataset hash and config hash during
   validation. A record cannot name itself.
-* Registration is immutable: an existing id cannot be rewritten with different
-  metadata, so history cannot be edited after the fact.
-* Splits must be chronological: every training season precedes its test season.
+* Registration is atomic and immutable. The metadata file is created only if
+  absent, via a hard link of a fully written temporary file, so two concurrent
+  writers cannot both succeed and neither can observe a half-written record.
+* Values are walked recursively before use: NaN, infinities and non-JSON types
+  are refused anywhere in the record, including inside hyperparameters and
+  notes.
+* Splits must be chronological, and calibration bucket counts must sum to the
+  stated sample size, so metrics cannot quietly describe a different sample.
 
 Separation from production: :class:`ProductionArtifactRegistry` exists only to
 refuse. There is no production path yet, and no code here may pretend otherwise.
@@ -125,12 +134,42 @@ def _reject_unknown(block: dict, allowed: set, label: str) -> None:
                             f"{label} carries fields the schema does not define")
 
 
+def _walk_json(value, path: str = "record") -> None:
+    """Reject anything that is not a finite, plain JSON value, at any depth.
+
+    NaN and infinities survive arithmetic quietly and serialise to invalid JSON,
+    so they are refused before any field-specific check can accept them. The
+    path in the detail is what makes the failure actionable.
+    """
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise RegistryError("non_finite_value", f"{path} is not a finite number")
+        return
+    if isinstance(value, bool) or isinstance(value, int) or value is None:
+        return
+    if isinstance(value, str):
+        return
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if not isinstance(key, str):
+                raise RegistryError("unsupported_json_value",
+                                    f"{path} has a non-string key")
+            _walk_json(item, f"{path}.{key}")
+        return
+    if isinstance(value, (list, tuple)):
+        for index, item in enumerate(value):
+            _walk_json(item, f"{path}[{index}]")
+        return
+    raise RegistryError("unsupported_json_value",
+                        f"{path} holds {type(value).__name__}, which JSON cannot carry")
+
+
 def _finite(value, label: str, *, low: float | None = None,
             high: float | None = None) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise RegistryError(f"invalid:{label}", f"{label} must be numeric")
     if not math.isfinite(value):
-        raise RegistryError("non_finite_metric", f"{label} must be finite, got {value!r}")
+        raise RegistryError("non_finite_value", f"{label} is not a finite number")
     if low is not None and value < low:
         raise RegistryError(f"invalid:{label}", f"{label} below {low}")
     if high is not None and value > high:
@@ -160,8 +199,9 @@ def season_start(season) -> int:
     start = int(match.group(1))
     tail = match.group(2)
     if tail:
-        end = int(tail) if len(tail) == 4 else 2000 + int(tail) if int(tail) < 100 else int(tail)
-        if len(tail) == 2:
+        if len(tail) == 4:
+            end = int(tail)
+        else:
             end = (start // 100) * 100 + int(tail)
             if end < start:
                 end += 100
@@ -224,8 +264,7 @@ def _resolve_under_data(base_dir: str, path: str) -> str:
     data_root = os.path.realpath(os.path.join(base_dir, DATA_DIR))
     target = os.path.realpath(os.path.join(base_dir, path))
     if target != data_root and not target.startswith(data_root + os.sep):
-        raise RegistryError("symlink_escape",
-                            f"{path} resolves outside the data root")
+        raise RegistryError("symlink_escape", f"{path} resolves outside the data root")
     for prefix in TRACKED_PREFIXES:
         tracked = os.path.realpath(os.path.join(base_dir, prefix))
         if target == tracked or target.startswith(tracked + os.sep):
@@ -243,18 +282,15 @@ def _sha256_file(path: str) -> str:
 
 
 # --------------------------------------------------------------------------- #
-# validation
+# structural validation
 # --------------------------------------------------------------------------- #
 
-def validate(record: dict, *, base_dir: str | None = None,
-             verify_files: bool = True) -> dict:
-    """Validate a record and return it unchanged.
-
-    Missing metadata raises; it never degrades to a warning, because a record
-    that passes validation is later treated as evidence.
-    """
+def _validate_structure(record: dict) -> dict:
+    """Everything that can be checked without touching the filesystem."""
     if not isinstance(record, dict):
         raise RegistryError("invalid:record", "record must be an object")
+
+    _walk_json(record)
 
     for key in REQUIRED:
         if key == "files":
@@ -398,11 +434,12 @@ def validate(record: dict, *, base_dir: str | None = None,
     _finite(metrics.get("log_loss"), "metrics.log_loss", low=0.0)
     _finite(metrics.get("brier"), "metrics.brier", low=0.0, high=2.0)
     _finite(metrics.get("ece"), "metrics.ece", low=0.0, high=1.0)
-    _positive_int(metrics.get("n"), "metrics.n")
+    sample = _positive_int(metrics.get("n"), "metrics.n")
     calibration = metrics.get("calibration")
     if not isinstance(calibration, list) or not calibration:
         raise RegistryError("missing:metrics.calibration",
                             "calibration results are required")
+    bucket_total = 0
     for bucket in calibration:
         if not isinstance(bucket, dict):
             raise RegistryError("invalid:metrics.calibration",
@@ -412,7 +449,12 @@ def validate(record: dict, *, base_dir: str | None = None,
         _finite(bucket.get("observed"), "metrics.calibration.observed", low=0.0, high=1.0)
         if "predicted" in bucket:
             _finite(bucket["predicted"], "metrics.calibration.predicted", low=0.0, high=1.0)
-        _positive_int(bucket.get("n"), "metrics.calibration.n")
+        bucket_total += _positive_int(bucket.get("n"), "metrics.calibration.n")
+    if bucket_total != sample:
+        raise RegistryError(
+            "calibration_total_mismatch",
+            f"calibration buckets cover {bucket_total} matches but metrics.n is {sample}",
+        )
 
     created = _require_str(record, "created_at")
     if not created.endswith("Z"):
@@ -422,16 +464,9 @@ def validate(record: dict, *, base_dir: str | None = None,
     except ValueError as exc:
         raise RegistryError("invalid:created_at", str(exc)) from exc
 
-    # --- files -------------------------------------------------------------
-    files = record["files"]
-    if files and verify_files and not base_dir:
-        raise RegistryError(
-            "base_dir_required",
-            "file verification was requested and files are referenced, so base_dir "
-            "is required; skipping verification silently is not allowed",
-        )
+    # --- files (shape only; bytes are checked by validate) -----------------
     seen = set()
-    for entry in files:
+    for entry in record["files"]:
         if not isinstance(entry, dict):
             raise RegistryError("invalid:files", "each file entry must be an object")
         _reject_unknown(entry, FILE_KEYS, "files")
@@ -444,12 +479,6 @@ def validate(record: dict, *, base_dir: str | None = None,
                                 f"sha256 missing or malformed for {path}")
         if "bytes" in entry:
             _positive_int(entry["bytes"], "files.bytes")
-        if verify_files and base_dir:
-            target = _resolve_under_data(base_dir, path)
-            if not os.path.isfile(target):
-                raise RegistryError("file_missing", f"referenced file not found: {path}")
-            if _sha256_file(target) != entry["sha256"]:
-                raise RegistryError("checksum_mismatch", f"checksum differs for {path}")
 
     if record["research_only"] is not True:
         raise RegistryError("research_only_required",
@@ -463,11 +492,48 @@ def validate(record: dict, *, base_dir: str | None = None,
     return record
 
 
+# --------------------------------------------------------------------------- #
+# validation, including the filesystem
+# --------------------------------------------------------------------------- #
+
+def validate(record: dict, *, base_dir: str | None = None) -> dict:
+    """Validate a record, including every referenced file.
+
+    There is deliberately no flag to skip file verification. A record that
+    references bytes must be checked against them, so references without a base
+    directory are refused rather than silently trusted. Metadata-only records
+    (empty ``files``) need no base directory.
+    """
+    _validate_structure(record)
+    files = record["files"]
+    if not files:
+        return record
+    if not base_dir:
+        raise RegistryError(
+            "base_dir_required",
+            "record references artifact files, so base_dir is required; "
+            "skipping verification is not permitted",
+        )
+    for entry in files:
+        path = _check_path(entry["path"])
+        target = _resolve_under_data(base_dir, path)
+        if not os.path.isfile(target):
+            raise RegistryError("file_missing", f"referenced file not found: {path}")
+        if _sha256_file(target) != entry["sha256"]:
+            raise RegistryError("checksum_mismatch", f"checksum differs for {path}")
+    return record
+
+
 def build_record(*, model_family: str, dataset: dict, provenance: dict,
                  schema_version: str, feature_version: str, training: dict,
                  code_commit: str, evaluation: dict, metrics: dict,
                  created_at: str, files: list) -> dict:
-    """Assemble a record with the id derived from family, dataset and config."""
+    """Construct a record with its id derived from family, dataset and config.
+
+    This only builds and structurally validates metadata. It registers nothing
+    and touches no files; :func:`write_record` is the only path to registration,
+    and it always verifies referenced files.
+    """
     config_sha = (training or {}).get("config_sha256", "")
     record = {
         "artifact_id": artifact_id(model_family, (dataset or {}).get("manifest_hash", ""),
@@ -487,7 +553,7 @@ def build_record(*, model_family: str, dataset: dict, provenance: dict,
         "research_only": True,
         "production_approved": False,
     }
-    return validate(record, verify_files=False)
+    return _validate_structure(record)
 
 
 # --------------------------------------------------------------------------- #
@@ -502,35 +568,53 @@ def record_dir(artifact_id_value: str, root: str = REGISTRY_ROOT) -> str:
 
 
 def _canonical(record: dict) -> str:
-    return json.dumps(record, indent=2, sort_keys=True, allow_nan=False) + "\n"
+    try:
+        return json.dumps(record, indent=2, sort_keys=True, allow_nan=False) + "\n"
+    except (ValueError, TypeError) as exc:
+        raise RegistryError("serialization_failed",
+                            f"record cannot be serialised as JSON: {exc}") from exc
 
 
 def write_record(record: dict, *, root: str = REGISTRY_ROOT,
-                 base_dir: str | None = None, verify_files: bool = True) -> str:
-    """Validate, then write ``metadata.json`` once. Registration is immutable."""
-    validate(record, base_dir=base_dir, verify_files=verify_files)
+                 base_dir: str | None = None) -> str:
+    """Register a record: validate, verify files, then create-if-absent.
+
+    The metadata file is written to a temporary path and published with a hard
+    link, which fails if the name already exists. Two concurrent writers can
+    therefore never both succeed, and no reader can observe a partial file.
+    """
+    validate(record, base_dir=base_dir)
     directory = record_dir(record["artifact_id"], root)
     os.makedirs(directory, exist_ok=True)
     target = os.path.join(directory, "metadata.json")
     payload = _canonical(record)
-    if os.path.exists(target):
-        existing = load_record(target)
-        if _canonical(existing) == payload:
-            return target
-        raise RegistryError(
-            "artifact_immutable",
-            f"{record['artifact_id']} is already registered with different metadata; "
-            "a new dataset or config means a new id, not an edited record",
-        )
+
     handle, temp = tempfile.mkstemp(dir=directory, suffix=".tmp")
     try:
         with os.fdopen(handle, "w", encoding="utf-8") as fh:
             fh.write(payload)
-        os.replace(temp, target)
+            fh.flush()
+            os.fsync(fh.fileno())
+        try:
+            os.link(temp, target)
+        except FileExistsError:
+            return _resolve_existing(target, payload, record["artifact_id"])
+        return target
     finally:
         if os.path.exists(temp):
             os.unlink(temp)
-    return target
+
+
+def _resolve_existing(target: str, payload: str, artifact_id_value: str) -> str:
+    """An id already exists: identical content is idempotent, anything else is not."""
+    existing = load_record(target)
+    if _canonical(existing) == payload:
+        return target
+    raise RegistryError(
+        "artifact_immutable",
+        f"{artifact_id_value} is already registered with different metadata; "
+        "a new dataset or config means a new id, not an edited record",
+    )
 
 
 def _reject_constant(token: str):
