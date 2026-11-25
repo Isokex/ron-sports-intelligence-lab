@@ -15,7 +15,32 @@ pinned commit. **Research only:** the manifest reports
 | Files | `{season}/en.1.json` for six seasons |
 | Licence | CC0 1.0 Universal, `LICENSE.md` at the pinned commit |
 | Attribution | OpenFootball (openfootball/football.json), public domain under CC0 1.0 |
-| Retrieved | 2026-11-25T14:27:47Z |
+| Configured retrieval timestamp | 2026-11-25T14:27:47Z, pinned in `config/openfootball-sources.json` for deterministic output. This is **not** acquisition evidence. |
+
+### Acquisition evidence
+
+The timestamp above is a *configured* value, chosen so repeated builds produce
+identical output. When bytes were actually fetched is a separate fact, recorded
+by `scripts/fetch_openfootball.py` in `retrieval.json` beside the sources at
+`data/openfootball/<commit>/retrieval.json`.
+
+For the build described here that file records:
+
+| Evidence | Value |
+|---|---|
+| Observed retrieval time | 2026-11-25T14:36:01Z, later than the configured 14:27:47Z because fetching and building are separate steps |
+| Commit observed | `e6744429ee395bc86f247348c6184bb08d4eb361`, matching the pinned config |
+| Hash consistency | every downloaded file's SHA-256 matches the pinned value, no mismatches |
+| Recorded at | `data/openfootball/<commit>/retrieval.json` (ignored, never tracked) |
+
+`audit.json` reports this under `source.acquisition` with `status`, the observed
+`retrievedAt`, `commitMatchesConfig`, `consistent` and `mismatchedFiles`, and it
+reports `source.configuredRetrievedAt` separately with the caveat that the
+configured value is not evidence. If `retrieval.json` is absent the audit says
+`status: "unrecorded"` and makes no retrieval claim at all; it never substitutes
+the configured timestamp for observed evidence. The same holds for the value in
+this document: it describes the recorded build, not a promise about any other
+run.
 
 Per-file SHA-256 hashes are recorded in `config/openfootball-sources.json` and
 re-verified on every read, so a changed upstream file fails the build instead of

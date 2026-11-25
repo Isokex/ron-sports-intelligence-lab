@@ -482,3 +482,15 @@ def test_audit_is_deterministic_for_the_same_source_tree(tmp_path):
     first = script._audit(adapter, manifest, out, "2026-11-25T01:00:00Z")
     second = script._audit(adapter, manifest, out, "2026-11-25T01:00:00Z")
     assert first == second
+
+
+def test_build_document_separates_configured_time_from_acquisition_evidence():
+    """The doc must not present the pinned timestamp as observed retrieval."""
+    document = open("docs/phase-2b-corpus-build.md").read()
+    assert "| Retrieved |" not in document
+    assert "Configured retrieval timestamp" in document
+    assert "not** acquisition evidence" in document
+    assert "retrieval.json" in document
+    assert "Observed retrieval time" in document
+    assert "Hash consistency" in document
+    assert 'status: "unrecorded"' in document
