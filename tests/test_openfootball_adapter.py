@@ -397,3 +397,88 @@ def test_fetch_script_refuses_tracked_output_paths():
 def test_data_directory_is_gitignored():
     ignored = open(".gitignore").read()
     assert "\ndata/" in ignored or ignored.startswith("data/")
+
+
+# --------------------------------------------------------------------------- #
+# audit metadata: file size and acquisition evidence
+# --------------------------------------------------------------------------- #
+
+def _audit_case(tmp_path, retrieval=None):
+    payload = {"matches": [
+        match(day="2019-08-09", score={"ft": [1, 0]}),
+        match(day="2019-08-10", home="Chelsea FC", away="Aston Villa",
+              score={"ft": [0, 0]}),
+    ]}
+    root, config_path, aliases_path = make_env(tmp_path, {"2019-20": payload})
+    adapter = OpenFootballAdapter(source_root=root, config_path=config_path,
+                                  aliases_path=aliases_path)
+    out = str(tmp_path / "out")
+    manifest = corpus.build(adapter, out, created_at="2026-11-25T00:00:00Z")
+    if retrieval is not None:
+        with open(os.path.join(root, "retrieval.json"), "w") as fh:
+            json.dump(retrieval, fh)
+    script = _load_script("build_openfootball_corpus.py")
+    return script, adapter, manifest, out, root
+
+
+def test_audit_records_file_size_not_record_count(tmp_path):
+    script, adapter, manifest, out, root = _audit_case(tmp_path)
+    audit = script._audit(adapter, manifest, out, "2026-11-25T01:00:00Z")
+    entry = audit["source"]["files"][0]
+    actual = os.path.getsize(os.path.join(root, "2019-20", "en.1.json"))
+    assert entry["bytes"] == actual
+    assert entry["bytes"] != adapter.files[0].records
+    assert entry["sourceRecords"] == 2
+
+
+def test_audit_separates_configured_timestamp_from_acquisition(tmp_path):
+    script, adapter, manifest, out, root = _audit_case(tmp_path)
+    evidence = {"commit": COMMIT, "retrieved_at": "2026-11-25T14:36:01+00:00",
+                "files": [{"path": item.path, "sha256": item.sha256,
+                           "bytes": item.bytes} for item in adapter.files]}
+    with open(os.path.join(root, "retrieval.json"), "w") as fh:
+        json.dump(evidence, fh)
+    audit = script._audit(adapter, manifest, out, "2026-11-25T01:00:00Z")
+    source = audit["source"]
+    assert source["configuredRetrievedAt"] == "2026-11-25T00:00:00Z"
+    assert source["acquisition"]["status"] == "recorded"
+    assert source["acquisition"]["retrievedAt"] == "2026-11-25T14:36:01+00:00"
+    assert source["acquisition"]["retrievedAt"] != source["configuredRetrievedAt"]
+    assert source["acquisition"]["consistent"] is True
+    assert source["acquisition"]["commitMatchesConfig"] is True
+    assert "not evidence" in source["configuredRetrievedAtNote"]
+
+
+def test_audit_reports_unrecorded_acquisition_without_pretending(tmp_path):
+    script, adapter, manifest, out, root = _audit_case(tmp_path)
+    audit = script._audit(adapter, manifest, out, "2026-11-25T01:00:00Z")
+    acquisition = audit["source"]["acquisition"]
+    assert acquisition["status"] == "unrecorded"
+    assert acquisition["path"] is None
+    assert "not acquisition evidence" in acquisition["reason"]
+
+
+def test_audit_flags_inconsistent_acquisition_evidence(tmp_path):
+    script, adapter, manifest, out, root = _audit_case(tmp_path)
+    evidence = {"commit": "0" * 40, "retrieved_at": "2026-11-25T14:36:01+00:00",
+                "files": [{"path": adapter.files[0].path, "sha256": "0" * 64,
+                           "bytes": 1}]}
+    with open(os.path.join(root, "retrieval.json"), "w") as fh:
+        json.dump(evidence, fh)
+    audit = script._audit(adapter, manifest, out, "2026-11-25T01:00:00Z")
+    acquisition = audit["source"]["acquisition"]
+    assert acquisition["consistent"] is False
+    assert acquisition["commitMatchesConfig"] is False
+    assert acquisition["mismatchedFiles"]
+
+
+def test_audit_is_deterministic_for_the_same_source_tree(tmp_path):
+    script, adapter, manifest, out, root = _audit_case(tmp_path)
+    evidence = {"commit": COMMIT, "retrieved_at": "2026-11-25T14:36:01+00:00",
+                "files": [{"path": item.path, "sha256": item.sha256,
+                           "bytes": item.bytes} for item in adapter.files]}
+    with open(os.path.join(root, "retrieval.json"), "w") as fh:
+        json.dump(evidence, fh)
+    first = script._audit(adapter, manifest, out, "2026-11-25T01:00:00Z")
+    second = script._audit(adapter, manifest, out, "2026-11-25T01:00:00Z")
+    assert first == second
