@@ -352,3 +352,17 @@ def test_labels_have_no_kickoff_ceiling_while_features_do():
     assert temporal.prematch_feature_inputs(doc, [], [], KICKOFF)["label_visible"] is False
     with pytest.raises(temporal.TemporalError):
         temporal.prematch_feature_inputs(doc, [], [], LATER)
+
+
+def test_label_visible_is_timestamp_only_not_label_proof():
+    # The corpus permits an outcome timestamp before kickoff (warning, not
+    # rejection), so label_visible can be True pre-match.
+    early = record(available_at=BEFORE)
+    out = temporal.prematch_feature_inputs(early, [], [], KICKOFF)
+    assert out["label_visible"] is True
+    # ...and it still says nothing about whether a valid label exists.
+    unfinished = record(available_at=BEFORE, status="NS")
+    assert temporal.prematch_feature_inputs(
+        unfinished, [], [], KICKOFF)["label_visible"] is True
+    assert temporal.training_labels([unfinished], KICKOFF) == []
+    assert len(temporal.training_labels([early], KICKOFF)) == 1

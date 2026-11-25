@@ -175,9 +175,11 @@ def prematch_feature_inputs(match, history, observations, as_of) -> dict:
     return {"match_key": key, "kickoff_utc": match.get("kickoff_utc"),
             "asOf": cutoff, "observations": usable_obs,
             "history": usable_history,
-            # Timestamp-only and always False pre-match: `as_of` may not pass
-            # kickoff, so an outcome can never be "visible" here. It is NOT
-            # proof that a valid label exists; use training_labels for that.
+            # Timestamp-only: True when the source reports an outcome time at
+            # or before the cutoff. The corpus permits an outcome timestamp
+            # before kickoff (a warning, not a rejection), so this CAN be True
+            # pre-match. It is never proof that a valid label exists;
+            # training_labels is the sole authority on label eligibility.
             "label_visible": (lambda st: st is not None and st <= limit)(
                 _at(match)),
             "excluded": {"observations": dropped_obs,

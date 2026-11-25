@@ -68,6 +68,11 @@ Unfinished fixtures, missing scores and impossible scores are dropped rather
 than guessed. `training_example(..., as_of, label_as_of)` composes both: features
 at the pre-match timestamp, label at the later one. Post-match data never enters
 the feature path.
+`prematch_feature_inputs` also returns `label_visible`, which is **timestamp-only**:
+True when the source reports an outcome time at or before the cutoff. Because an
+outcome timestamp before kickoff is a warning rather than a rejection, it can be
+True pre-match. It is never proof that a valid label exists; `training_labels` is
+the sole authority on label eligibility.
 
 ## Manifests
 
