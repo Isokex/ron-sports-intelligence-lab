@@ -117,6 +117,7 @@ class SourceFile:
     path: str
     sha256: str
     records: int
+    bytes: int
 
 
 @dataclass
@@ -148,7 +149,8 @@ class OpenFootballAdapter:
         repo = config["repository"]
         self.files = [SourceFile(season=item["season"], path=item["path"],
                                  sha256=item["sha256"],
-                                 records=int(item.get("source_records") or 0))
+                                 records=int(item.get("source_records") or 0),
+                                 bytes=int(item.get("bytes") or 0))
                       for item in config["seasons"]]
         self.meta = SourceMeta(
             name="openfootball",

@@ -51,6 +51,42 @@ def _partition_rows(out_dir: str):
     return rows
 
 
+def _acquisition_evidence(adapter) -> dict:
+    """Actual retrieval evidence, kept distinct from the configured timestamp.
+
+    The build timestamp is pinned in config so output is deterministic; that
+    makes it a *configured* value, not proof of when bytes were fetched. The
+    fetch step writes ``retrieval.json`` next to the sources, and the audit
+    reports it as acquisition evidence with an explicit consistency check. When
+    the file is absent the audit says ``unrecorded`` rather than presenting the
+    configured timestamp as if it were observed.
+    """
+    path = os.path.join(adapter.source_root, "retrieval.json")
+    if not os.path.isfile(path):
+        return {"status": "unrecorded",
+                "path": None,
+                "reason": "retrieval.json not found; the configured timestamp is "
+                          "not acquisition evidence"}
+    try:
+        with open(path, encoding="utf-8") as fh:
+            evidence = json.load(fh)
+    except (OSError, json.JSONDecodeError) as exc:
+        return {"status": "unreadable", "path": path, "reason": str(exc)}
+    recorded = {item.get("path"): item.get("sha256")
+                for item in evidence.get("files") or [] if isinstance(item, dict)}
+    expected = {item.path: item.sha256 for item in adapter.files}
+    consistent = recorded == expected
+    return {"status": "recorded",
+            "path": os.path.relpath(path, REPO_ROOT),
+            "retrievedAt": evidence.get("retrieved_at"),
+            "commit": evidence.get("commit"),
+            "commitMatchesConfig": evidence.get("commit") == adapter.config["commit"],
+            "consistent": consistent,
+            "mismatchedFiles": sorted(set(recorded) ^ set(expected)) or
+                               sorted(k for k in expected
+                                      if recorded.get(k) != expected[k])}
+
+
 def _audit(adapter, manifest: dict, out_dir: str, built_at: str) -> dict:
     rows = _partition_rows(out_dir)
     by_season = defaultdict(lambda: {"accepted": 0, "finished": 0,
@@ -110,10 +146,14 @@ def _audit(adapter, manifest: dict, out_dir: str, built_at: str) -> dict:
             "provider": "openfootball",
             "repository": adapter.config["repository"],
             "commit": adapter.config["commit"],
-            "retrievedAt": adapter.config["retrieved_at"],
+            "configuredRetrievedAt": adapter.config["retrieved_at"],
+            "configuredRetrievedAtNote": "pinned in config for deterministic output; "
+                                         "not evidence of when bytes were fetched",
+            "acquisition": _acquisition_evidence(adapter),
             "licence": adapter.config["licence"],
             "files": [{"season": item.season, "path": item.path,
-                       "sha256": item.sha256, "bytes": item.records}
+                       "sha256": item.sha256, "bytes": item.bytes,
+                       "sourceRecords": item.records}
                       for item in adapter.files],
         },
         "temporal": {"derivationRule": DERIVATION_RULE,
