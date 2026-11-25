@@ -49,3 +49,19 @@ time-varying metadata, so two runs over unchanged source data produce identical
 (`COMPLETE`/`PARTIAL`), `suitableForProductionTraining` (always false for now),
 `source` (licence metadata), `counts`, `rejectionReasons`, `conflicts`,
 `partitions` (path, rows, sha256), `contentHash`, `notes`.
+
+## Known limitations (open)
+
+1. **Observation payloads are untyped.** `payload` is free-form JSON, so a
+   `pre_match_lineup` and a `result` share one shape. Phase 2 must add a
+   per-kind schema and validate it on write.
+2. **Duplicate provenance is lost.** When two sources disagree or repeat a
+   record, the first is kept and the later one is only counted. Its source,
+   id and timestamps must be preserved in a side table so provenance survives.
+3. **A URL is not licensing evidence.** Verification records a status, a
+   reviewer, a date, a scope and an `evidence_url`; the actual permission
+   document (reference, date, signatory, scope) must be attached and versioned.
+4. **Production eligibility is not publication approval.** A manifest saying
+   `productionEligible: true` means the corpus passed the checks we know how to
+   run. It is not permission to publish, deploy or train a production model,
+   which stays a human decision recorded separately.

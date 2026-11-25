@@ -132,20 +132,38 @@ def temporal_view(matches, observations, as_of) -> dict:
                          "observations": len(obs_hidden)}}
 
 
-def feature_inputs(match, history, observations, as_of) -> dict:
-    """Leakage-safe inputs for one match at one prediction time.
+def assert_prematch_timestamp(as_of, kickoff_utc) -> str:
+    """The one pre-match invariant: a prediction timestamp may not be later
+    than the target kickoff.
+
+    Exported deliberately: the training dataset builder must call this, not
+    re-implement it, so features and datasets cannot drift apart.
+    """
+    cutoff = require_timestamp(as_of, "as_of")
+    kickoff = parse_iso(kickoff_utc)
+    if kickoff is None:
+        raise TemporalError("invalid_timestamp:kickoff_utc")
+    if parse_iso(cutoff) > kickoff:
+        raise TemporalError("prediction_after_kickoff")
+    return cutoff
+
+
+def prematch_feature_inputs(match, history, observations, as_of) -> dict:
+    """PRE-MATCH, leakage-safe inputs for one match at one prediction time.
+
+    This function is pre-match only: `as_of` must not be later than the target
+    kickoff (see `assert_prematch_timestamp`). Outcomes are labels, not
+    features, and belong in `training_labels`.
 
     `history` may contain anything. Only finished matches whose outcome was
     available by `as_of` AND which kicked off before this match are used, and
     only observations with `available_at <= as_of` are returned. The counts of
     what was dropped are returned with the data, never hidden.
     """
-    cutoff = require_timestamp(as_of, "as_of")
+    cutoff = assert_prematch_timestamp(as_of, match.get("kickoff_utc"))
     limit = parse_iso(cutoff)
     key = match.get("match_key")
     kickoff = parse_iso(match.get("kickoff_utc"))
-    if kickoff is None:
-        raise TemporalError("invalid_timestamp:kickoff_utc")
 
     usable_history, dropped_history = [], 0
     for past in history or []:
@@ -176,6 +194,45 @@ def feature_inputs(match, history, observations, as_of) -> dict:
             "label_visible": label_stamp is not None and label_stamp <= limit,
             "excluded": {"observations": dropped_obs,
                          "history": dropped_history}}
+
+
+def training_labels(matches, as_of) -> list:
+    """Historical outcomes usable as labels at `as_of`.
+
+    Post-match information is legitimate here: a result becomes a label once
+    its outcome time has passed. There is no kickoff ceiling, because labels
+    are not features.
+    """
+    cutoff = require_timestamp(as_of, "as_of")
+    limit = parse_iso(cutoff)
+    out = []
+    for row in matches or []:
+        stamp = _at(row)
+        if stamp is not None and stamp <= limit:
+            out.append(row)
+    return out
+
+
+def training_example(match, history, observations, as_of,
+                     label_as_of=None) -> dict:
+    """One reproducible training example: pre-match features plus the label.
+
+    `as_of` is the PREDICTION timestamp and must not pass kickoff; the same
+    guard as the feature path is used, so a dataset builder inherits the
+    invariant instead of restating it. The label is resolved separately at
+    `label_as_of` (default `as_of`), which is normally the dataset build time,
+    because an outcome is only a label once it has happened.
+    """
+    features = prematch_feature_inputs(match, history, observations, as_of)
+    labels = [m for m in training_labels([match], label_as_of or as_of)
+              if m.get("match_key") == match.get("match_key")]
+    return {"features": features,
+            "label": labels[0] if labels else None,
+            "label_visible": bool(labels)}
+
+
+# Backwards-compatible name; pre-match semantics are identical.
+feature_inputs = prematch_feature_inputs
 
 
 def assert_no_leakage(rows, as_of) -> None:

@@ -253,3 +253,49 @@ def test_rerun_is_byte_identical_including_versions(tmp_path):
     assert a["partitions"][0]["sha256"] == b["partitions"][0]["sha256"]
     assert a["schemaVersion"] == b["schemaVersion"] == "rsil-match-v2"
     assert a["transformVersion"] == b["transformVersion"]
+
+
+# --- target prediction timestamp enforcement (pre-match invariant) ---
+
+def test_features_at_kickoff_are_permitted():
+    out = temporal.prematch_feature_inputs(record(), [], [], KICKOFF)
+    assert out["asOf"] == KICKOFF
+    assert out["label_visible"] is False
+
+
+def test_features_before_kickoff_are_permitted():
+    out = temporal.prematch_feature_inputs(record(), [], [], BEFORE)
+    assert out["asOf"] == BEFORE
+    assert out["label_visible"] is False
+
+
+def test_features_after_kickoff_are_rejected():
+    with pytest.raises(temporal.TemporalError) as err:
+        temporal.prematch_feature_inputs(record(), [], [], AFTER)
+    assert str(err.value) == "prediction_after_kickoff"
+
+
+def test_post_match_results_remain_available_as_labels():
+    doc = record()
+    assert temporal.training_labels([doc], KICKOFF) == []
+    labels = temporal.training_labels([doc], AFTER)
+    assert len(labels) == 1
+    example = temporal.training_example(doc, [], [], BEFORE,
+                                        label_as_of=AFTER)
+    assert example["label_visible"] is True
+
+
+def test_post_match_observations_cannot_enter_prematch_features():
+    doc = record()
+    obs = [{"match_key": doc["match_key"], "kind": "result",
+            "available_at": AFTER, "payload": {}, "source_name": "s",
+            "source_record_id": "r1"}]
+    out = temporal.prematch_feature_inputs(doc, [], obs, KICKOFF)
+    assert out["observations"] == []
+    assert out["excluded"]["observations"] == 1
+
+
+def test_dataset_builder_shares_the_same_invariant():
+    with pytest.raises(temporal.TemporalError):
+        temporal.training_example(record(), [], [], AFTER)
+    assert temporal.feature_inputs is temporal.prematch_feature_inputs
