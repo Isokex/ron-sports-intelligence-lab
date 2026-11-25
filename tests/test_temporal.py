@@ -292,7 +292,7 @@ def test_post_match_observations_cannot_enter_prematch_features():
             "source_record_id": "r1"}]
     out = temporal.prematch_feature_inputs(doc, [], obs, KICKOFF)
     assert out["observations"] == []
-    assert out["excluded"]["observations"] == 1
+    assert out["excluded"]["post_match_observations"] == 1
 
 
 def test_dataset_builder_shares_the_same_invariant():

@@ -1,38 +1,32 @@
 """Temporal model: event time versus information availability.
 
-`kickoff_utc` is when the event happened. `available_at` is when one specific
-piece of information became known to the lab. There is deliberately NO
-universal ordering between them:
+`kickoff_utc` is when the event happened. `available_at` is when a specific
+piece of information became known. There is deliberately NO universal ordering
+between them: pre-match odds and lineups are known BEFORE kickoff, results and
+post-match statistics AFTER it, and corrections whenever they occur.
 
-* pre-match odds, confirmed lineups and team news become available BEFORE kickoff;
-* final results and post-match statistics become available AFTER it;
-* corrections and late amendments become available whenever the source
-  publishes them, which can be days later.
+Two separate questions follow, and they must never share a cutoff:
 
-A match-level row cannot honestly carry one availability timestamp for all of
-those, so match-level `available_at` means "the time the OUTCOME became
-available" and everything else is expressed as an `Observation` with its own
-`available_at`.
-
-The only rule that matters for training is the feature rule: features for a
-prediction made at time T may read only records whose `available_at` is less
-than or equal to T. Everything else is leakage.
+* FEATURES for a prediction at T may read only records whose `available_at`
+  is <= T, and only observation kinds that exist before a match starts.
+* LABELS are outcomes. They are eligible once the outcome is available, and
+  they are resolved at a label timestamp, never at the prediction timestamp.
 """
+
 from dataclasses import dataclass, field
 
-from .schema import parse_iso
+from .schema import FINISHED, parse_iso
 
 PRE_MATCH_KINDS = frozenset({"pre_match_odds", "pre_match_lineup",
                              "pre_match_team_news"})
 POST_MATCH_KINDS = frozenset({"result", "post_match_stats", "correction"})
 OBSERVATION_KINDS = PRE_MATCH_KINDS | POST_MATCH_KINDS
 
-OBSERVATION_FIELDS = ("match_key", "kind", "available_at", "payload",
-                      "source_name", "source_record_id")
+MAX_GOALS = 30
 
 
 class TemporalError(ValueError):
-    """Raised when a temporal request is malformed (for example a naive time)."""
+    """A temporal contract was violated. Codes are stable and machine-readable."""
 
 
 @dataclass(frozen=True)
@@ -46,33 +40,9 @@ class Observation:
 
     def row(self) -> dict:
         return {"match_key": self.match_key, "kind": self.kind,
-                "available_at": self.available_at,
-                "payload": dict(self.payload),
+                "available_at": self.available_at, "payload": self.payload,
                 "source_name": self.source_name,
                 "source_record_id": self.source_record_id}
-
-
-def validate_observation(raw) -> tuple:
-    """Return (Observation, None) or (None, machine_readable_reason)."""
-    if not isinstance(raw, dict):
-        return None, "not_a_mapping"
-    for required in ("match_key", "kind", "available_at"):
-        if raw.get(required) in (None, ""):
-            return None, f"missing:{required}"
-    kind = str(raw["kind"])
-    if kind not in OBSERVATION_KINDS:
-        return None, f"unknown_kind:{kind}"
-    try:
-        available_at = require_timestamp(raw["available_at"], "available_at")
-    except TemporalError as exc:
-        return None, str(exc)
-    payload = raw.get("payload") or {}
-    if not isinstance(payload, dict):
-        return None, "payload_not_a_mapping"
-    return Observation(match_key=str(raw["match_key"]), kind=kind,
-                       available_at=available_at, payload=payload,
-                       source_name=str(raw.get("source_name") or ""),
-                       source_record_id=str(raw.get("source_record_id") or "")), None
 
 
 def require_timestamp(value, label="timestamp") -> str:
@@ -88,7 +58,29 @@ def require_timestamp(value, label="timestamp") -> str:
 
 
 def _at(row) -> "object":
-    return parse_iso(row.get("available_at"))
+    return parse_iso((row or {}).get("available_at"))
+
+
+def validate_observation(raw) -> tuple:
+    """(Observation, None) or (None, reason). Unknown kinds are rejected."""
+    if not isinstance(raw, dict):
+        return None, "not_a_mapping"
+    kind = str(raw.get("kind") or "")
+    if kind not in OBSERVATION_KINDS:
+        return None, f"unknown_kind:{kind or 'missing'}"
+    if not raw.get("match_key"):
+        return None, "missing:match_key"
+    try:
+        stamp = require_timestamp(raw.get("available_at"), "available_at")
+    except TemporalError as exc:
+        return None, str(exc)
+    payload = raw.get("payload") or {}
+    if not isinstance(payload, dict):
+        return None, "payload_not_a_mapping"
+    return Observation(match_key=str(raw["match_key"]), kind=kind,
+                       available_at=stamp, payload=dict(payload),
+                       source_name=str(raw.get("source_name") or ""),
+                       source_record_id=str(raw.get("source_record_id") or "")), None
 
 
 def visible(records, as_of) -> list:
@@ -104,40 +96,34 @@ def visible(records, as_of) -> list:
 
 
 def temporal_view(matches, observations, as_of) -> dict:
-    """Split a corpus at one prediction timestamp.
-
-    `results` are matches whose outcome was known by `as_of`. `observations`
-    are pre/post-match facts known by `as_of`. `excluded` counts what was
-    withheld, so a caller can never mistake a small view for a full corpus.
-    """
+    """Everything known at `as_of`, and how much was withheld."""
     cutoff = require_timestamp(as_of, "as_of")
     limit = parse_iso(cutoff)
-    known_matches, unknown_matches = [], []
-    for match in matches or []:
-        stamp = _at(match)
+    results, observations_out = [], []
+    dropped_matches = dropped_obs = 0
+    for row in matches or []:
+        stamp = _at(row)
         if stamp is not None and stamp <= limit:
-            known_matches.append(match)
+            results.append(row)
         else:
-            unknown_matches.append(match)
-    obs_visible, obs_hidden = [], []
+            dropped_matches += 1
     for obs in observations or []:
         stamp = _at(obs)
         if stamp is not None and stamp <= limit:
-            obs_visible.append(obs)
+            observations_out.append(obs)
         else:
-            obs_hidden.append(obs)
-    return {"asOf": cutoff, "results": known_matches,
-            "observations": obs_visible,
-            "excluded": {"results": len(unknown_matches),
-                         "observations": len(obs_hidden)}}
+            dropped_obs += 1
+    return {"asOf": cutoff, "results": results,
+            "observations": observations_out,
+            "excluded": {"results": dropped_matches,
+                         "observations": dropped_obs}}
 
 
 def assert_prematch_timestamp(as_of, kickoff_utc) -> str:
-    """The one pre-match invariant: a prediction timestamp may not be later
-    than the target kickoff.
+    """The pre-match invariant, in one place so no builder can restate it.
 
-    Exported deliberately: the training dataset builder must call this, not
-    re-implement it, so features and datasets cannot drift apart.
+    A prediction timestamp at kickoff is allowed; one after kickoff is not,
+    because by then the outcome of this very match may exist.
     """
     cutoff = require_timestamp(as_of, "as_of")
     kickoff = parse_iso(kickoff_utc)
@@ -151,14 +137,10 @@ def assert_prematch_timestamp(as_of, kickoff_utc) -> str:
 def prematch_feature_inputs(match, history, observations, as_of) -> dict:
     """PRE-MATCH, leakage-safe inputs for one match at one prediction time.
 
-    This function is pre-match only: `as_of` must not be later than the target
-    kickoff (see `assert_prematch_timestamp`). Outcomes are labels, not
-    features, and belong in `training_labels`.
-
-    `history` may contain anything. Only finished matches whose outcome was
-    available by `as_of` AND which kicked off before this match are used, and
-    only observations with `available_at <= as_of` are returned. The counts of
-    what was dropped are returned with the data, never hidden.
+    `as_of` must not be later than the target kickoff. Only pre-match
+    observation kinds are admitted: a `result` or `post_match_stats` record is
+    refused even when its timestamp falsely claims it existed before kickoff.
+    Everything withheld is counted, never hidden.
     """
     cutoff = assert_prematch_timestamp(as_of, match.get("kickoff_utc"))
     limit = parse_iso(cutoff)
@@ -177,9 +159,12 @@ def prematch_feature_inputs(match, history, observations, as_of) -> dict:
             continue
         usable_history.append(past)
 
-    usable_obs, dropped_obs = [], 0
+    usable_obs, dropped_obs, dropped_kind = [], 0, 0
     for obs in observations or []:
         if obs.get("match_key") != key:
+            continue
+        if str(obs.get("kind") or "") not in PRE_MATCH_KINDS:
+            dropped_kind += 1
             continue
         stamp = _at(obs)
         if stamp is None or stamp > limit:
@@ -187,13 +172,35 @@ def prematch_feature_inputs(match, history, observations, as_of) -> dict:
             continue
         usable_obs.append(obs)
 
-    label_stamp = _at(match)
     return {"match_key": key, "kickoff_utc": match.get("kickoff_utc"),
             "asOf": cutoff, "observations": usable_obs,
             "history": usable_history,
-            "label_visible": label_stamp is not None and label_stamp <= limit,
+            # Informational only: the target outcome is never a feature.
+            "label_visible": (lambda st: st is not None and st <= limit)(
+                _at(match)),
             "excluded": {"observations": dropped_obs,
+                         "post_match_observations": dropped_kind,
                          "history": dropped_history}}
+
+
+feature_inputs = prematch_feature_inputs
+
+
+def label_eligible(row, limit) -> bool:
+    """A label needs a finished match, two valid final scores, and an outcome
+    time at or before `limit`. Anything less is a gap, not a label."""
+    stamp = _at(row)
+    if stamp is None or stamp > limit:
+        return False
+    if str(row.get("status") or "").upper() not in FINISHED:
+        return False
+    for name in ("home_goals", "away_goals"):
+        value = row.get(name)
+        if isinstance(value, bool) or not isinstance(value, int):
+            return False
+        if value < 0 or value > MAX_GOALS:
+            return False
+    return True
 
 
 def training_labels(matches, as_of) -> list:
@@ -201,16 +208,11 @@ def training_labels(matches, as_of) -> list:
 
     Post-match information is legitimate here: a result becomes a label once
     its outcome time has passed. There is no kickoff ceiling, because labels
-    are not features.
+    are not features. Unfinished, scoreless or impossible results are dropped.
     """
     cutoff = require_timestamp(as_of, "as_of")
     limit = parse_iso(cutoff)
-    out = []
-    for row in matches or []:
-        stamp = _at(row)
-        if stamp is not None and stamp <= limit:
-            out.append(row)
-    return out
+    return [row for row in (matches or []) if label_eligible(row, limit)]
 
 
 def training_example(match, history, observations, as_of,
@@ -220,28 +222,24 @@ def training_example(match, history, observations, as_of,
     `as_of` is the PREDICTION timestamp and must not pass kickoff; the same
     guard as the feature path is used, so a dataset builder inherits the
     invariant instead of restating it. The label is resolved separately at
-    `label_as_of` (default `as_of`), which is normally the dataset build time,
-    because an outcome is only a label once it has happened.
+    `label_as_of` (default `as_of`), which is normally the dataset build time.
     """
     features = prematch_feature_inputs(match, history, observations, as_of)
-    labels = [m for m in training_labels([match], label_as_of or as_of)
-              if m.get("match_key") == match.get("match_key")]
-    return {"features": features,
-            "label": labels[0] if labels else None,
-            "label_visible": bool(labels)}
-
-
-# Backwards-compatible name; pre-match semantics are identical.
-feature_inputs = prematch_feature_inputs
+    labels = [row for row in training_labels([match], label_as_of or as_of)
+              if row.get("match_key") == match.get("match_key")]
+    features["label"] = ({"home_goals": labels[0].get("home_goals"),
+                          "away_goals": labels[0].get("away_goals")}
+                         if labels else None)
+    features["label_visible"] = bool(labels)
+    return features
 
 
 def assert_no_leakage(rows, as_of) -> None:
-    """Hard guard: raise if any supplied record is from the future."""
+    """Fail loudly if any supplied row was not available at `as_of`."""
     cutoff = require_timestamp(as_of, "as_of")
     limit = parse_iso(cutoff)
     for row in rows or []:
         stamp = _at(row)
         if stamp is None or stamp > limit:
             raise TemporalError(
-                f"leakage: record available_at={row.get('available_at')!r} "
-                f"is after as_of={cutoff}")
+                f"leakage:{row.get('match_key') or row.get('kind')}")
